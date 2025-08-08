@@ -381,7 +381,7 @@ def main():
         st.caption("Tip: On Streamlit Cloud, add EBAY_CLIENT_ID / EBAY_CLIENT_SECRET in Settings -> Secrets.")
 
     if not DB_PATH.exists():
-        st.info("No database yet. Click \"Fetch latest listings now\".", icon="🛈")
+        st.info("No database yet. Click \"Fetch latest listings now\".")
         return
 
     con = sqlite3.connect(str(DB_PATH))
@@ -412,7 +412,7 @@ def main():
     c1.metric("Tracked items", len(rows))
     cnt = con.execute("SELECT COUNT(*) FROM price_history").fetchone()[0]
     c2.metric("Price observations", cnt)
-    c3.write("DB:", str(DB_PATH))
+    c3.write(f"DB: {DB_PATH}")
 
     for row in rows:
         with st.container(border=True):
