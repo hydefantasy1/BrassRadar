@@ -1,7 +1,6 @@
 
 import os
 import io
-import csv
 import zipfile
 import sqlite3
 import smtplib
@@ -21,12 +20,10 @@ MARKETPLACES_DEFAULT = ["EBAY_US", "EBAY_DE", "EBAY_GB", "EBAY_FR", "EBAY_IT", "
 BUY_FILTER = "buyingOptions:{FIXED_PRICE|AUCTION}"
 MAX_RESULTS_PER_QUERY = 600  # per marketplace & term
 
-# Category IDs (mostly global across sites) — feel free to tweak
-# 19119: Model Railroads & Trains; 122604: Locomotives; 122591: Freight Cars; 122595: Passenger Cars
-DEFAULT_CATEGORY_IDS = ["19119","122604","122591","122595"]
+DEFAULT_CATEGORY_IDS = ["19119","122604","122591","122595"]  # Model trains + key subcats
 
-ALLOW = ["brass","lok","lokomotive","locomotive","zug","train","dampflok","diesel","ho","h0","h-o","model","modell","bahn"]
 DENY = ["wiha","schraubendreher","screwdriver","bit set","werkzeug","tool","spanner","pliers"]
+ALLOW = ["brass","lok","lokomotive","locomotive","zug","train","dampflok","diesel","ho","h0","h-o","model","modell","bahn"]
 
 FX = {"USD":1.0,"EUR":0.92,"GBP":0.78,"AUD":1.48}  # units per USD
 
@@ -50,18 +47,22 @@ def get_app_token(client_id: str, client_secret: str) -> str:
     return r.json()["access_token"]
 
 def to_usd(value: Optional[float], ccy: Optional[str]) -> Optional[float]:
-    if value is None or not ccy: return None
+    if value is None or not ccy:
+        return None
     c = ccy.upper()
-    if c not in FX: return None
+    if c not in FX:
+        return None
     return round(value/FX[c], 2)
 
 def relevant(title: str) -> bool:
     t = (title or "").lower()
-    if any(d in t for d in DENY): return False
+    if any(d in t for d in DENY):
+        return False
     return any(a in t for a in ALLOW)
 
 def flag_for_country(code: Optional[str]) -> str:
-    if not code or len(code) != 2: return ""
+    if not code or len(code) != 2:
+        return ""
     base = 127397
     return "".join(chr(base + ord(c)) for c in code.upper())
 
@@ -72,12 +73,11 @@ def search_page(token: str, marketplace: str, q: str, category_ids: List[str], l
         "q": q,
         "limit": min(limit, 200),
         "offset": offset,
-        "sort":"NEWLY_LISTED",
+        "sort": "NEWLY_LISTED",
         "filter": BUY_FILTER,
-        "category_ids": ",".join(category_ids) if category_ids else None
+        "category_ids": ",".join(category_ids) if category_ids else None,
     }
-    # remove None params
-    params = {k:v for k,v in params.items() if v is not None}
+    params = {k: v for k, v in params.items() if v is not None}
     r = requests.get(url, params=params, headers=headers, timeout=30)
     r.raise_for_status()
     return r.json()
@@ -105,9 +105,11 @@ def paginate_search(token: str, marketplace: str, q: str, category_ids: List[str
     return results[:max_results]
 
 def download_image(url: Optional[str], item_id: str) -> Optional[str]:
-    if not url: return None
+    if not url:
+        return None
     fn = os.path.join(IMG_DIR, f"{item_id}.jpg")
-    if os.path.exists(fn): return fn
+    if os.path.exists(fn):
+        return fn
     try:
         r = requests.get(url, timeout=30)
         if r.status_code == 200:
@@ -258,14 +260,10 @@ def notify_ended(item: Dict):
     body = f"{item.get('title','(no title)')}
 Final (observed) price: {item.get('final_price')} {item.get('final_currency')}
 {item.get('item_web_url','')}"
-    # ntfy
-
     topic = st.secrets.get("NTFY_TOPIC")
     base = st.secrets.get("NTFY_URL", "https://ntfy.sh")
     if topic:
         send_ntfy(topic, title, body, base_url=base)
-    # email
-
     smtp_host = st.secrets.get("SMTP_HOST")
     smtp_user = st.secrets.get("SMTP_USER")
     smtp_pass = st.secrets.get("SMTP_PASS")
@@ -281,65 +279,35 @@ def check_watchlist(token: str, window_minutes: int = 15) -> int:
         for item_id, mp, end_time, status in rows:
             try:
                 # only poll when near/past end
-
                 if end_time:
-
                     try:
-
                         end_dt = datetime.fromisoformat(end_time.replace("Z","+00:00"))
-
                     except Exception:
-
                         end_dt = None
-
                 else:
-
                     end_dt = None
-
                 if end_dt and end_dt > datetime.now(timezone.utc) + timedelta(minutes=window_minutes):
-
                     continue
-
                 detail = get_item_detail(token, mp, item_id)
-
                 cb = detail.get("currentBidPrice") or {}
-
                 bid_v = cb.get("value"); bid_c = cb.get("currency")
-
                 if not bid_v:
-
                     row = con.execute("SELECT status, current_bid_value, current_bid_ccy, item_web_url, title FROM items WHERE item_id=?", (item_id,)).fetchone()
-
                     if row:
-
                         status_db, last_bid_v, last_bid_c, url, title = row
-
                         if status_db == "ENDED" or last_bid_v is not None:
-
                             con.execute("UPDATE watchlist SET status='ENDED', final_price=?, final_currency=?, last_checked=? WHERE item_id=?",
-
                                         (last_bid_v, last_bid_c, utc_now(), item_id))
-
                             updated += 1
-
                             notify_ended({"title": title, "final_price": last_bid_v, "final_currency": last_bid_c, "item_web_url": url})
-
                     else:
-
                         con.execute("UPDATE watchlist SET status='ENDED', last_checked=? WHERE item_id=?", (utc_now(), item_id))
-
                         updated += 1
-
                 else:
-
                     con.execute("UPDATE watchlist SET last_checked=? WHERE item_id=?", (utc_now(), item_id))
-
             except Exception:
-
                 continue
-
         con.commit()
-
     return updated
 
 def load_items(marketplaces: List[str]) -> List[Dict]:
@@ -427,12 +395,10 @@ with st.sidebar:
     ], index=0)
     do_fetch = st.button("Fetch latest listings now", type="primary")
     do_check = st.button("Check watched auctions now")
-    st.caption("Secrets required: EBAY_CLIENT_ID, EBAY_CLIENT_SECRET. Optional: NTFY_TOPIC/NTFY_URL or SMTP_* for alerts.")
+    st.caption("Secrets: EBAY_CLIENT_ID, EBAY_CLIENT_SECRET. Optional: NTFY_TOPIC/NTFY_URL or SMTP_* for alerts.")
 
-# Secrets
 client_id = st.secrets.get("EBAY_CLIENT_ID")
 client_secret = st.secrets.get("EBAY_CLIENT_SECRET")
-
 if not client_id or not client_secret:
     st.error("Missing secrets: set EBAY_CLIENT_ID and EBAY_CLIENT_SECRET in Settings → Secrets.")
 else:
@@ -456,12 +422,13 @@ def price_ship_usd(r):
     return (r.get("price_usd") or 0.0) + (r.get("ship_usd") or 0.0)
 
 # Export buttons
-def df_items(rows): 
+def df_items(rows):
     return pd.DataFrame(rows)[[
         "item_id","title","brand","marketplace","country","buying_options","is_auction","condition",
         "price_value","price_ccy","price_usd","ship_value","ship_ccy","ship_usd",
         "current_bid_value","current_bid_ccy","end_time","status","item_web_url","image_url","image_path","date_updated"
     ]]
+
 def df_watchlist():
     with sqlite3.connect(DB_PATH) as c:
         c.row_factory = sqlite3.Row
@@ -471,16 +438,14 @@ def df_watchlist():
 c1, c2, c3 = st.columns(3)
 with c1:
     if rows:
-        csv_items = df_items(rows).to_csv(index=False).encode("utf-8")
-        st.download_button("Download items CSV", csv_items, file_name="brassradar_items.csv", mime="text/csv")
+        csv_bytes = df_items(rows).to_csv(index=False).encode("utf-8")
+        st.download_button("Download items CSV", csv_bytes, file_name="brassradar_items.csv", mime="text/csv")
 with c2:
     wl_df = df_watchlist()
     if not wl_df.empty:
         csv_wl = wl_df.to_csv(index=False).encode("utf-8")
         st.download_button("Download watchlist CSV", csv_wl, file_name="brassradar_watchlist.csv", mime="text/csv")
 with c3:
-    # Zip images
-
     if any(r.get("image_path") for r in rows):
         mem = io.BytesIO()
         with zipfile.ZipFile(mem, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -491,8 +456,7 @@ with c3:
         mem.seek(0)
         st.download_button("Download images ZIP", mem, file_name="brassradar_images.zip", mime="application/zip")
 
-# sort locally
-
+# Sort locally
 if sort_mode == "Newest updates":
     rows = sorted(rows, key=lambda r: r.get("date_updated",""), reverse=True)
 elif sort_mode == "Time: ending soonest":
@@ -508,8 +472,7 @@ elif sort_mode == "Price + Shipping: lowest first (USD)":
 else:
     rows = sorted(rows, key=price_ship_usd, reverse=True)
 
-# render grid with watch + chart
-
+# Render cards
 cols_per_row = 3
 for i in range(0, len(rows), cols_per_row):
     cols = st.columns(cols_per_row)
@@ -520,13 +483,10 @@ for i in range(0, len(rows), cols_per_row):
                 if img_src:
                     st.image(img_src, use_container_width=True)
                 st.markdown(f"**{r.get('title','(no title)')}**")
-                flag = (r.get("country") or "")
-                try:
-                    if len(flag) == 2:
-                        base = 127397
-                        flag = ''.join(chr(base + ord(c)) for c in flag.upper())
-                except Exception:
-                    pass
+                flag = r.get("country") or ""
+                if isinstance(flag, str) and len(flag) == 2:
+                    base = 127397
+                    flag = ''.join(chr(base + ord(c)) for c in flag.upper())
                 badge = "🟢 AUCTION (live)" if r.get("is_auction") else "💰 FIXED PRICE"
                 if r.get("status") == "ENDED":
                     badge = "⚪ AUCTION — ended" if r.get("is_auction") else "⛔ ENDED"
@@ -542,24 +502,22 @@ for i in range(0, len(rows), cols_per_row):
                 st.write(native + usd_txt + ship)
                 if r.get("end_time") and r.get("is_auction"):
                     st.caption("Ends: " + r["end_time"])
-
                 c1, c2 = st.columns([1,1])
                 with c1:
                     if r.get("item_web_url"):
                         st.link_button("View on eBay", r["item_web_url"])
                 with c2:
-                    watched_flag = "✅ Watching" if r["item_id"] in watched and watched[r["item_id"]]["status"] == "WATCHING" else "Watch"
-                    if st.button(watched_flag, key=f"watch_{r['item_id']}", disabled=watched_flag.startswith("✅")):
-                        with sqlite3.connect(DB_PATH) as conw:
+                    with db() as conw:
+                        watched_row = conw.execute("SELECT status FROM watchlist WHERE item_id=?", (r["item_id"],)).fetchone()
+                    watching = watched_row and watched_row[0] == "WATCHING"
+                    label = "✅ Watching" if watching else "Watch"
+                    if st.button(label, key=f"watch_{r['item_id']}", disabled=watching):
+                        with db() as conw:
                             add_to_watchlist(conw, r["item_id"], r["marketplace"], r.get("end_time"))
-                            st.experimental_rerun()
-
-                # mini chart from price_history
-
-                with sqlite3.connect(DB_PATH) as conh:
-                    conh.row_factory = sqlite3.Row
-                    ph = conh.execute("SELECT observed_at, COALESCE(current_bid_value, price_value) AS v FROM price_history WHERE item_id=? ORDER BY observed_at",
-                                      (r["item_id"],)).fetchall()
+                        st.experimental_rerun()
+                # mini chart
+                with db() as conh:
+                    ph = conh.execute("SELECT observed_at, COALESCE(current_bid_value, price_value) AS v FROM price_history WHERE item_id=? ORDER BY observed_at", (r["item_id"],)).fetchall()
                     if ph:
                         df = pd.DataFrame(ph, columns=["observed_at","v"]).set_index("observed_at")
                         st.line_chart(df, use_container_width=True)
